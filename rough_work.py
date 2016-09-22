@@ -36,12 +36,14 @@ class myApp(object):
         if y is None:
             self.y = [ self.getyval(self.equation_params, k) for k in self.x ]
             self.y_with_noise = self.addNoise(self.y)
-            self.equation_params_estimate = self.regressionanalysis(self.x, self.y_with_noise)[::-1]
-            self.y_estimate = [self.getyval(self.equation_params_estimate, k) for k in self.x ]
+
         else:
             self.y = y
             self.y_with_noise = y
             self.y_estimate = y
+
+        self.equation_params_estimate = self.regressionanalysis(self.x, self.y_with_noise)[::-1]
+        self.y_estimate = [self.getyval(self.equation_params_estimate, k) for k in self.x ]
 
         assert len(self.x) == len(self.y), 'Supplied X and Y data is inconsistent'
 
