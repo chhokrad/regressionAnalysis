@@ -138,4 +138,4 @@ for app_name in FeatureCorrData:
           'learning_rate': 0.01, 'loss': 'huber'}
     clf = ensemble.GradientBoostingRegressor(**params)
     clf.fit(X_data_, Y_data_)
-    EstimatorData[app_name] = clf.estimators_
+    EstimatorData[app_name] = clf
