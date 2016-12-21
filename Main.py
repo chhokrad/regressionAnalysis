@@ -3,6 +3,7 @@ from my_namedtuples import FeatureSelection, XYdata
 import sys
 import numpy
 from sklearn.feature_selection import RFECV
+from sklearn.svm import SVR
 from sklearn.model_selection import ShuffleSplit
 from itertools import combinations
 from scipy.stats.stats import pearsonr
@@ -13,6 +14,7 @@ from sklearn.model_selection import cross_val_score
 from sklearn.multioutput import MultiOutputRegressor
 import pickle
 import warnings
+from sklearn import linear_model
 warnings.filterwarnings("ignore", category=DeprecationWarning) 
 
 # arg 0: excel file path
@@ -53,6 +55,7 @@ for filename in filenames:
             X_prev = X_prev.append(pandas.DataFrame(excel_file[excel_file[curr_state_label] == int(index)], 
                                        columns = complete_input_feature_list))
         Y = pandas.DataFrame(temp, columns=complete_output_feature_list)
+        assert len(X_prev) == len(X_new) == len(Y), 'Data of unequal length'
         app_data[app_name] = XYdata(X_prev, X_new, Y)
 
     FestureSelectionData = dict()
@@ -123,20 +126,25 @@ for filename in filenames:
         print scores.mean()
         print FestureSelectionData[app_name].Score
         
-        X_prev = pandas.DataFrame(app_data[app_name].X_prev_frame, columns=cols).values
-        X_new = X_data_
+        X_new_frame = pandas.DataFrame(app_data[app_name].X_new_frame, columns=cols)
+        X_prev_frame = pandas.DataFrame(app_data[app_name].X_prev_frame, columns=cols)
         
-        clf_ = ensemble.GradientBoostingRegressor(**params)
-        mul_clf = MultiOutputRegressor(clf_)
-        scores_ = cross_val_score(mul_clf, X_prev, X_new, cv= ShuffleSplit(n_splits=10, random_state=0,test_size=0.2), scoring = 'neg_mean_squared_error')
-        print scores_.mean()
-        mul_clf_ = MultiOutputRegressor(clf_)
-        mul_clf_.fit(X_prev, X_new)
-        EstimatorData[app_name] = (clf, mul_clf_, FeatureCorrData[app_name])
+        mul_clf_dict = dict()
+        for feature in cols:
+            print "   " + feature
+            X_new = X_new_frame[feature].values
+            X_prev = X_prev_frame[feature].values
+            assert len(X_new) == len(X_prev), 'Vectors Don\'t match' + str(len(X_new)) + ' ' + str(len(X_prev))
+            clf1_ = SVR('rbf')
+            scores = cross_val_score(clf1_ , numpy.asarray(X_prev).reshape(len(X_prev),1), X_new, cv= ShuffleSplit(n_splits=10, random_state=0,test_size=0.2), scoring = 'neg_mean_squared_error')
+            print "   " + str(scores.mean())
+            mul_clf_ = linear_model.Lasso(alpha=.1)
+            mul_clf_.fit(numpy.asarray(X_prev).reshape(len(X_prev),1), X_new)
+            mul_clf_dict[feature] = mul_clf_
+        EstimatorData[app_name] = (clf, mul_clf_dict, FeatureCorrData[app_name])
     
     CompleteData[filename] = {'EstimatorData': EstimatorData, 'FeatureCorrelationData': FeatureCorrData, 
                               'FeatureSelectionData': FestureSelectionData, 'pearsonData': pearsonData}    
 
 pickle.dump(CompleteData, open('AllHardwareData.p', 'wb'))
-
 
