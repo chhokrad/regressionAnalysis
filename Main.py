@@ -1,4 +1,5 @@
 import pandas
+import math
 from my_namedtuples import FeatureSelection, XYdata
 import sys
 import numpy
@@ -27,10 +28,16 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 filenames  = ['precision_server.csv', 'isis2.csv', 'meta2.csv', 'isislab9.csv']
 app_id_label = 'benchmark_id'
+'''
 complete_input_feature_list = [u'host_IPC', u'host_IPS', u'host_cache_misses', u'host_cache_ref', 
                                u'host_cpupercent', u'host_cs', u'host_disk_io', u'host_kvm_exit', 
                                u'host_llc_bw', u'host_mem_bw', u'host_memory', u'host_net_io', 
                                u'host_sched_iowait', u'host_sched_switch', u'host_sched_wait']
+'''
+complete_input_feature_list = [u'host_IPC', u'host_IPS', u'host_cache_misses', u'host_cache_ref', 
+                               u'host_cpupercent', u'host_cs', u'host_kvm_exit', 
+                               u'host_llc_bw', u'host_mem_bw', u'host_memory', u'host_net_io', 
+                               u'host_sched_switch', u'host_sched_wait']
 complete_output_feature_list = [u'latency']
 prev_state_label = 'index_prev'
 curr_state_label = 'index'
@@ -40,6 +47,7 @@ thresh_lower = -0.8
 alpha = 0.95
 params = {'n_estimators':500, 'max_depth':4, 'min_samples_split':9, 'learning_rate':0.01,'loss':'ls'}
 CompleteData = dict()
+FigureData = dict()
 
 for filename in filenames:
     excel_file = pandas.read_csv(filename)
@@ -114,37 +122,63 @@ for filename in filenames:
         
 
     EstimatorData = dict()
+    EstimatorResultData = dict()
     for app_name in app_names:
         print app_name
         cols = FeatureCorrData[app_name]
         X_data_ = pandas.DataFrame(app_data[app_name].X_new_frame, columns=cols).values
         Y_data_ = app_data[app_name].Y_frame.values[:,-1]
-        scores = cross_val_score(myEst, X_data_, Y_data_, cv= ShuffleSplit(n_splits=10, random_state=0,test_size=0.2), scoring = 'neg_mean_squared_error')
+        cv_ = ShuffleSplit(n_splits=10, random_state=0,test_size=0.2)
+        scores = cross_val_score(myEst, X_data_, Y_data_, cv= cv_, scoring = 'neg_mean_squared_error')
         clf = ensemble.GradientBoostingRegressor(**params)
         clf.fit(X_data_, Y_data_)
         
+        scores_ = list()
+        index = 0
+        for train_index, test_index in cv_.split(X_data_):
+            y_sum = sum([Y_data_[k] for k in test_index])
+            scores_.append(((sqrt(-1*scores[index]))/(sqrt(len(test_index))*y_sum))*100)
+            index = index +1
+        
+        index = 0
+        assert len(scores) == len(scores_), 'list size do not match'
         print scores.mean()
+        print numpy.asarray(scores_).mean()
         print FestureSelectionData[app_name].Score
         
         X_new_frame = pandas.DataFrame(app_data[app_name].X_new_frame, columns=cols)
         X_prev_frame = pandas.DataFrame(app_data[app_name].X_prev_frame, columns=cols)
         
         mul_clf_dict = dict()
+        mul_clf_result_dict = dict()
         for feature in cols:
             print "   " + feature
             X_new = X_new_frame[feature].values
             X_prev = X_prev_frame[feature].values
             assert len(X_new) == len(X_prev), 'Vectors Don\'t match' + str(len(X_new)) + ' ' + str(len(X_prev))
-            clf1_ = SVR('rbf')
-            scores = cross_val_score(clf1_ , numpy.asarray(X_prev).reshape(len(X_prev),1), X_new, cv= ShuffleSplit(n_splits=10, random_state=0,test_size=0.2), scoring = 'neg_mean_squared_error')
-            print "   " + str(scores.mean())
-            mul_clf_ = linear_model.Lasso(alpha=.1)
+            mul_clf_ = ensemble.GradientBoostingRegressor(**params)
+            scores_mul = cross_val_score(mul_clf_ , numpy.asarray(X_prev).reshape(len(X_prev),1), X_new, cv= cv_, scoring = 'neg_mean_squared_error')
+            print "   " + str(scores_mul.mean())
+            
+            scores_mul_ = list()
+            index = 0
+            for train_index, test_index in cv_.split(X_prev):
+                y_sum = sum([X_new[k] for k in test_index])
+                scores_mul_.append(((sqrt(-1*scores_mul[index]))/(sqrt(len(test_index))*y_sum))*100)
+                index = index +1
+            index = 0
+            assert len(scores_mul_) == len(scores_mul), 'list size do not match'
+            print "   " + str(numpy.asarray(scores_mul_).mean())
+            
             mul_clf_.fit(numpy.asarray(X_prev).reshape(len(X_prev),1), X_new)
             mul_clf_dict[feature] = mul_clf_
+            mul_clf_result_dict[feature] = (numpy.asarray(scores_mul_).mean(), numpy.asarray(scores_mul_).std()) 
         EstimatorData[app_name] = (clf, mul_clf_dict, FeatureCorrData[app_name])
+        EstimatorResultData[app_name] = ((numpy.asarray(scores_).mean(),numpy.asarray(scores_).std()), mul_clf_result_dict)
+        print mul_clf_result_dict
     
     CompleteData[filename] = {'EstimatorData': EstimatorData, 'FeatureCorrelationData': FeatureCorrData, 
-                              'FeatureSelectionData': FestureSelectionData, 'pearsonData': pearsonData}    
+                              'FeatureSelectionData': FestureSelectionData, 'pearsonData': pearsonData,
+                             'FigureData': EstimatorResultData}    
 
-pickle.dump(CompleteData, open('AllHardwareData.p', 'wb'))
-
+pickle.dump(CompleteData, open('AllHardwareData_msp.p', 'wb'))
